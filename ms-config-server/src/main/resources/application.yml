@@ -1,5 +1,5 @@
 server:
-  port: 7075
+  port: 5050
 
 spring:
   application:
@@ -9,7 +9,7 @@ spring:
     config:
       server:
         git:
-          uri: https://github.com/markmercado1/EventsProyect.git # repositorio
+          uri: https://github.com/yheysonramos10/HotelSystem.git # repositorio
           searchPaths:
             - config-data
           default-label: eventsAndOthers
