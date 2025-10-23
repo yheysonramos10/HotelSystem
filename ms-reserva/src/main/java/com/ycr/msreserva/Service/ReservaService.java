@@ -165,7 +165,7 @@ public class ReservaService {
                 .orElseThrow(() -> new RuntimeException("Reserva no encontrada con id: " + id));
     }
 
-    // Cambiar estado de reserva
+    //* Cambiar estado de reserva
     public Reserva cambiarEstado(Long id, String nuevoEstado) {
         return reservaRepository.findById(id)
                 .map(reserva -> {

@@ -12,7 +12,7 @@ spring:
           uri: https://github.com/yheysonramos10/HotelSystem.git # repositorio
           searchPaths:
             - config-data
-          default-label: eventsAndOthers
+          default-label: main
 
   security:
     user:
