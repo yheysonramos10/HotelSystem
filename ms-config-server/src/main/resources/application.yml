@@ -1,0 +1,20 @@
+server:
+  port: 7075
+
+spring:
+  application:
+    name: ms-config-server
+
+  cloud:
+    config:
+      server:
+        git:
+          uri: https://github.com/markmercado1/EventsProyect.git # repositorio
+          searchPaths:
+            - config-data
+          default-label: eventsAndOthers
+
+  security:
+    user:
+      name: root
+      password: 123456

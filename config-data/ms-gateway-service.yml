@@ -1,0 +1,48 @@
+server:
+  port: 9050
+
+spring:
+  application:
+    name: ms-gateway-server
+
+  cloud:
+    gateway:
+      discovery:
+        locator:
+          enabled: true
+          lower-case-service-id: true
+
+      routes:
+        - id: ms-empleo
+          uri: lb://ms-empleo
+          predicates:
+            - Path=/empleos/**
+          filters:
+            - name: AuthFilter
+
+        - id: ms-persona
+          uri: lb://ms-persona
+          predicates:
+            - Path=/personas/**
+          filters:
+            - name: AuthFilter
+
+        - id: ms-pais
+          uri: lb://ms-pais
+          predicates:
+            - Path=/pais/**
+          filters:
+            - name: AuthFilter
+
+        - id: ms-auth-service
+          uri: lb://ms-auth-service
+          predicates:
+            - Path=/auth/**
+          filters: []
+
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_URI:http://localhost:8050/eureka}
+  instance:
+    instance-id: ${spring.application.name}:${spring.application.instance_id:${random.value}}
