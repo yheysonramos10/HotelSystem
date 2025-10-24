@@ -13,24 +13,24 @@ spring:
           lower-case-service-id: true
 
       routes:
-        - id: ms-empleo
-          uri: lb://ms-empleo
+        - id: ms-cliente
+          uri: lb://ms-cliente
           predicates:
-            - Path=/empleos/**
+            - Path=/clientes/**
           filters:
             - name: AuthFilter
 
-        - id: ms-persona
-          uri: lb://ms-persona
+        - id: ms-reserva
+          uri: lb://ms-reserva
           predicates:
-            - Path=/personas/**
+            - Path=/reservas/**
           filters:
             - name: AuthFilter
 
-        - id: ms-pais
-          uri: lb://ms-pais
+        - id: ms-habitacion
+          uri: lb://ms-habitacion
           predicates:
-            - Path=/pais/**
+            - Path=/habitaciones/**
           filters:
             - name: AuthFilter
 

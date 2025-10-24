@@ -2,7 +2,12 @@ package com.ycr.msreserva.Service;
 
 import com.ycr.msreserva.Entity.Reserva;
 import com.ycr.msreserva.Repository.ReservaRepository;
+import com.ycr.msreserva.dtos.ClienteDTO;
+import com.ycr.msreserva.dtos.HabitacionDTO;
+import com.ycr.msreserva.feign.ClienteFeign;
+import com.ycr.msreserva.feign.HabitacionFeign;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -18,23 +23,35 @@ public class ReservaService {
 
     @Autowired
     private ReservaRepository reservaRepository;
-
-
+    @Autowired
+    private ClienteFeign clienteFeign;
+    @Autowired
+    private HabitacionFeign habitacionFeign;
 
     // Crear reserva
     public Reserva crearReserva(Reserva reserva) {
-        // Validar fechas
+        // 🗓 Validar fechas
         if (reserva.getFechaInicio().isAfter(reserva.getFechaFin())) {
             throw new RuntimeException("La fecha de inicio no puede ser posterior a la fecha de fin");
         }
-        
+
         if (reserva.getFechaInicio().isBefore(LocalDate.now())) {
             throw new RuntimeException("La fecha de inicio no puede ser anterior a hoy");
         }
 
-        // Verificar que la habitación existe
-        Habitacion habitacion = habitacionRepository.findById(reserva.getIdHabitacion())
-                .orElseThrow(() -> new RuntimeException("Habitación no encontrada"));
+        //  Verificar que el cliente exista
+        ResponseEntity<ClienteDTO> clienteResponse = clienteFeign.obtenerClientePorId(reserva.getIdCliente());
+        if (!clienteResponse.getStatusCode().is2xxSuccessful() || clienteResponse.getBody() == null) {
+            throw new RuntimeException("Cliente no encontrado con ID: " + reserva.getIdCliente());
+        }
+
+        //  Verificar que la habitación exista
+        ResponseEntity<HabitacionDTO> habitacionResponse = habitacionFeign.obtenerHabitacionPorId(reserva.getIdHabitacion());
+        if (!habitacionResponse.getStatusCode().is2xxSuccessful() || habitacionResponse.getBody() == null) {
+            throw new RuntimeException("Habitación no encontrada con ID: " + reserva.getIdHabitacion());
+        }
+
+        HabitacionDTO habitacion = habitacionResponse.getBody();
 
         // Verificar disponibilidad (no hay reservas conflictivas)
         List<Reserva> reservasConflictivas = reservaRepository.findReservasConflictivas(
@@ -49,16 +66,26 @@ public class ReservaService {
 
         // Calcular monto total
         long dias = ChronoUnit.DAYS.between(reserva.getFechaInicio(), reserva.getFechaFin());
-        if (dias == 0) dias = 1; // Mínimo 1 día
+        if (dias <= 0) dias = 1; // Mínimo 1 día
         reserva.setMontoTotal(habitacion.getPrecioPorNoche() * dias);
 
-        // Establecer valores por defecto
+        // ⚙ Establecer valores por defecto
         if (reserva.getEstado() == null) {
             reserva.setEstado("PENDIENTE");
         }
         reserva.setFechaCreacion(LocalDateTime.now());
 
-        return reservaRepository.save(reserva);
+        //  Guardar reserva
+        Reserva reservaGuardada = reservaRepository.save(reserva);
+
+        // Actualizar disponibilidad de la habitación
+        try {
+            habitacionFeign.cambiarDisponibilidad(habitacion.getIdHabitacion(), false);
+        } catch (Exception e) {
+            System.err.println("No se pudo actualizar la disponibilidad de la habitación (posible fallback activado)");
+        }
+
+        return reservaGuardada;
     }
 
     // Obtener todas las reservas
@@ -118,84 +145,96 @@ public class ReservaService {
     public Reserva actualizarReserva(Long id, Reserva reservaActualizada) {
         return reservaRepository.findById(id)
                 .map(reserva -> {
-                    // No permitir actualizar si está cancelada
-                    if ("CANCELADA".equals(reserva.getEstado())) {
+
+                    //  No permitir actualizar una reserva cancelada
+                    if ("CANCELADA".equalsIgnoreCase(reserva.getEstado())) {
                         throw new RuntimeException("No se puede actualizar una reserva cancelada");
                     }
 
-                    // Si se cambian las fechas o habitación, verificar disponibilidad
-                    if (!reserva.getIdHabitacion().equals(reservaActualizada.getIdHabitacion()) ||
-                        !reserva.getFechaInicio().equals(reservaActualizada.getFechaInicio()) ||
-                        !reserva.getFechaFin().equals(reservaActualizada.getFechaFin())) {
-                        
+                    // Validar cliente
+                    ResponseEntity<ClienteDTO> clienteResponse = clienteFeign.obtenerClientePorId(reservaActualizada.getIdCliente());
+                    if (!clienteResponse.getStatusCode().is2xxSuccessful() || clienteResponse.getBody() == null) {
+                        throw new RuntimeException("Cliente no encontrado con ID: " + reservaActualizada.getIdCliente());
+                    }
+
+                    // Validar habitación
+                    ResponseEntity<HabitacionDTO> habitacionResponse = habitacionFeign.obtenerHabitacionPorId(reservaActualizada.getIdHabitacion());
+                    if (!habitacionResponse.getStatusCode().is2xxSuccessful() || habitacionResponse.getBody() == null) {
+                        throw new RuntimeException("Habitación no encontrada con ID: " + reservaActualizada.getIdHabitacion());
+                    }
+
+                    HabitacionDTO habitacion = habitacionResponse.getBody();
+
+                    // Verificar si cambian las fechas o la habitación
+                    boolean cambiosDeDisponibilidad =
+                            !reserva.getIdHabitacion().equals(reservaActualizada.getIdHabitacion()) ||
+                                    !reserva.getFechaInicio().equals(reservaActualizada.getFechaInicio()) ||
+                                    !reserva.getFechaFin().equals(reservaActualizada.getFechaFin());
+
+                    if (cambiosDeDisponibilidad) {
                         List<Reserva> reservasConflictivas = reservaRepository.findReservasConflictivas(
                                 reservaActualizada.getIdHabitacion(),
                                 reservaActualizada.getFechaInicio(),
                                 reservaActualizada.getFechaFin()
                         );
-                        
+
                         // Excluir la reserva actual de los conflictos
                         reservasConflictivas.removeIf(r -> r.getIdReserva().equals(id));
-                        
+
                         if (!reservasConflictivas.isEmpty()) {
                             throw new RuntimeException("La habitación no está disponible en las nuevas fechas");
                         }
 
-                        // Recalcular monto
-                        Habitacion habitacion = habitacionRepository.findById(reservaActualizada.getIdHabitacion())
-                                .orElseThrow(() -> new RuntimeException("Habitación no encontrada"));
-                        
+                        // Recalcular monto total
                         long dias = ChronoUnit.DAYS.between(
                                 reservaActualizada.getFechaInicio(),
                                 reservaActualizada.getFechaFin()
                         );
-                        if (dias == 0) dias = 1;
+                        if (dias <= 0) dias = 1;
+
                         reservaActualizada.setMontoTotal(habitacion.getPrecioPorNoche() * dias);
                     }
 
+                    // Actualizar campos
                     reserva.setIdCliente(reservaActualizada.getIdCliente());
                     reserva.setIdHabitacion(reservaActualizada.getIdHabitacion());
                     reserva.setFechaInicio(reservaActualizada.getFechaInicio());
                     reserva.setFechaFin(reservaActualizada.getFechaFin());
                     reserva.setMontoTotal(reservaActualizada.getMontoTotal());
                     reserva.setEstado(reservaActualizada.getEstado());
-                    
+
                     return reservaRepository.save(reserva);
                 })
                 .orElseThrow(() -> new RuntimeException("Reserva no encontrada con id: " + id));
     }
-
     //* Cambiar estado de reserva
     public Reserva cambiarEstado(Long id, String nuevoEstado) {
         return reservaRepository.findById(id)
                 .map(reserva -> {
                     String estadoAnterior = reserva.getEstado();
-                    
-                    // Validar transiciones de estado
+
+                    // 🔒 Validar transición de estado
                     if ("CANCELADA".equals(estadoAnterior)) {
                         throw new RuntimeException("No se puede cambiar el estado de una reserva cancelada");
                     }
 
                     reserva.setEstado(nuevoEstado);
-                    
-                    // Si se cancela, actualizar disponibilidad de habitación
-                    if ("CANCELADA".equals(nuevoEstado)) {
-                        habitacionRepository.findById(reserva.getIdHabitacion())
-                                .ifPresent(habitacion -> {
-                                    habitacion.setDisponible(true);
-                                    habitacionRepository.save(habitacion);
-                                });
+
+                    // 🔄 Cambiar disponibilidad en ms-habitacion según el nuevo estado
+                    Long idHabitacion = reserva.getIdHabitacion();
+
+                    try {
+                        if ("CANCELADA".equals(nuevoEstado)) {
+                            habitacionFeign.cambiarDisponibilidad(idHabitacion, true);
+                            System.out.println("✔ Habitación liberada (disponible nuevamente)");
+                        } else if ("CONFIRMADA".equals(nuevoEstado)) {
+                            habitacionFeign.cambiarDisponibilidad(idHabitacion, false);
+                            System.out.println("✔ Habitación marcada como ocupada");
+                        }
+                    } catch (Exception e) {
+                        System.err.println(" Error al actualizar disponibilidad de habitación vía Feign: " + e.getMessage());
                     }
-                    
-                    // Si se confirma, marcar habitación como ocupada
-                    if ("CONFIRMADA".equals(nuevoEstado)) {
-                        habitacionRepository.findById(reserva.getIdHabitacion())
-                                .ifPresent(habitacion -> {
-                                    habitacion.setDisponible(false);
-                                    habitacionRepository.save(habitacion);
-                                });
-                    }
-                    
+
                     return reservaRepository.save(reserva);
                 })
                 .orElseThrow(() -> new RuntimeException("Reserva no encontrada con id: " + id));

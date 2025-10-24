@@ -1,6 +1,6 @@
 spring:
   application:
-    name: ms-habitacion-service
+    name: ms-habitacion
   profiles:
     active: development
   config:
