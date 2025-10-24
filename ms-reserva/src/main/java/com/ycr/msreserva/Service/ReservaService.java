@@ -213,14 +213,14 @@ public class ReservaService {
                 .map(reserva -> {
                     String estadoAnterior = reserva.getEstado();
 
-                    // 🔒 Validar transición de estado
+                    //  Validar transición de estado
                     if ("CANCELADA".equals(estadoAnterior)) {
                         throw new RuntimeException("No se puede cambiar el estado de una reserva cancelada");
                     }
 
                     reserva.setEstado(nuevoEstado);
 
-                    // 🔄 Cambiar disponibilidad en ms-habitacion según el nuevo estado
+                    //  Cambiar disponibilidad en ms-habitacion según el nuevo estado
                     Long idHabitacion = reserva.getIdHabitacion();
 
                     try {

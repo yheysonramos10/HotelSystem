@@ -13,8 +13,7 @@ public interface ReservaRepository extends JpaRepository<Reserva, Long> {
     List<Reserva> findByIdCliente(Long idCliente);
     List<Reserva> findByIdHabitacion(Long idHabitacion);
     List<Reserva> findByEstado(String estado);
-    List<Reserva> findByIdClienteAndEstado(Long idCliente, String estado);
-    
+
     // Verificar si hay solapamiento de fechas para una habitación
     @Query("SELECT r FROM Reserva r WHERE r.idHabitacion = :idHabitacion " +
            "AND r.estado IN ('CONFIRMADA', 'PENDIENTE', 'PENDIENTE_CONFIRMACION') " +
